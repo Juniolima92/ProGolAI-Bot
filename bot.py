@@ -7,7 +7,6 @@ from telegram.ext import (
 from datetime import datetime, timedelta
 import pytz
 import logging
-import threading
 from flask import Flask
 
 # 🔧 Configurações
@@ -15,10 +14,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "8219603341:AAHsqUktaC5IIEtI8aehyPZtDrrKHWpeZ
 API_FOOTBALL_TOKEN = os.getenv("API_FOOTBALL_TOKEN", "cadc8d2e9944e5f78dc45bf26ab7a3fa")
 PORT = int(os.environ.get("PORT", 10000))
 API_BASE = "https://v3.football.api-sports.io"
-
-HEADERS = {
-    "x-apisports-key": API_FOOTBALL_TOKEN
-}
+HEADERS = { "x-apisports-key": API_FOOTBALL_TOKEN }
 
 logging.basicConfig(level=logging.INFO)
 
@@ -37,8 +33,6 @@ COUNTRY_FLAGS = {
     "Argentina": "🇦🇷", "Portugal": "🇵🇹"
 }
 
-chat_state = {}
-
 def get_time_brt(utc_time_str):
     utc_dt = datetime.strptime(utc_time_str, "%Y-%m-%dT%H:%M:%S%z")
     brt_tz = pytz.timezone("America/Sao_Paulo")
@@ -48,7 +42,6 @@ def get_time_brt(utc_time_str):
 def botao_voltar(voltar_para):
     return [InlineKeyboardButton("🔙 Voltar", callback_data=voltar_para)]
 
-# ✅ Função corrigida
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🔝 Prognósticos do Dia", callback_data='best_tips')],
@@ -57,27 +50,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⏱️ Todos os Jogos do Dia", callback_data='all_games')],
         [InlineKeyboardButton("🗓️ Jogos de Amanhã", callback_data='tomorrow_games')],
     ]
-
-    mensagem = "⚽ *Bem-vindo ao ProGol AI Bot!*\n\nEscolha uma das opções abaixo para ver os jogos e prognósticos:"
-
-    if update.message:
-        await update.message.reply_text(
-            mensagem,
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    elif update.callback_query:
-        await update.callback_query.edit_message_text(
-            mensagem,
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+    await update.message.reply_text(
+        "⚽ *Bem-vindo ao ProGol AI Bot!*\n\nEscolha uma das opções abaixo para ver os jogos e prognósticos:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
-    chat_id = query.message.chat.id
 
     try:
         if data == "start":
@@ -206,20 +188,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Erro: {e}")
         await query.edit_message_text("❌ Ocorreu um erro interno.")
 
-# 🚀 Inicialização
-def iniciar_bot():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.run_polling()
-
-# 🌐 Web para render
+# 🌐 Web para Render
 flask_app = Flask(__name__)
 
 @flask_app.route("/")
 def index():
     return "✅ ProGol AI Bot está rodando!"
 
+# 🚀 Inicialização com asyncio para Render
 if __name__ == "__main__":
-    threading.Thread(target=iniciar_bot).start()
-    flask_app.run(host="0.0.0.0", port=PORT)
+    import asyncio
+
+    async def iniciar_bot_async():
+        app = ApplicationBuilder().token(BOT_TOKEN).build()
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CallbackQueryHandler(button_handler))
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling()
+        await app.updater.idle()
+
+    def run_all():
+        loop = asyncio.get_event_loop()
+        loop.create_task(iniciar_bot_async())
+        flask_app.run(host="0.0.0.0", port=PORT)
+
+    run_all()

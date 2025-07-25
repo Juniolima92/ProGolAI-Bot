@@ -2,6 +2,8 @@ import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 import requests
+from aiogram import executor
+
 
 BOT_TOKEN = os.getenv("BOT_TOKEN") or "SEU_TOKEN_AQUI"
 API_KEY = os.getenv("API_KEY") or "SUA_API_KEY_AQUI"
@@ -35,4 +37,4 @@ def main():
     application.run_polling()
 
 if __name__ == "__main__":
-    main()
+    executor.start_polling(dp, skip_updates=True)

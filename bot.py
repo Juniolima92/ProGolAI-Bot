@@ -8,143 +8,185 @@ from datetime import datetime
 import pytz
 import logging
 import threading
-from flask import Flask
 
-# 🔧 Configuração
+# Configurações - sua chave API Football já inserida aqui
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8219603341:AAHsqUktaC5IIEtI8aehyPZtDrrKHWpeZOQ")
-API_KEY = os.getenv("API_KEY", "cadc8d2e9944e5f78dc45bf26ab7a3fa")
-PORT = int(os.environ.get("PORT", 10000))
+API_FOOTBALL_KEY = "cadc8d2e9944e5f78dc45bf26ab7a3fa"
+API_FOOTBALL_HOST = "v3.football.api-sports.io"
+HEADERS = {
+    'x-apisports-key': API_FOOTBALL_KEY
+}
 
 logging.basicConfig(level=logging.INFO)
 
-CLUB_COLORS = {
-    "Botafogo": "⚫️", "Flamengo": "🔴",
-    "Santos": "⚪️", "Palmeiras": "🟢",
-    "Corinthians": "⚫️", "São Paulo": "🔴",
-}
+# Função para formatar data e hora em horário de São Paulo
+def formatar_hora(data_str):
+    dt = datetime.strptime(data_str, "%Y-%m-%dT%H:%M:%S%z")
+    dt_sp = dt.astimezone(pytz.timezone("America/Sao_Paulo"))
+    return dt_sp.strftime("%d/%m %H:%M")
 
-def traduzir_nome(nome):
-    traducoes = {
-        "Flamengo RJ": "Flamengo",
-        "Botafogo RJ": "Botafogo",
-        "Palmeiras SP": "Palmeiras",
-        "Santos SP": "Santos",
-    }
-    return traducoes.get(nome, nome)
-
-def formatar_jogo(jogo):
-    horario = datetime.fromtimestamp(jogo["timestamp"], pytz.timezone("America/Sao_Paulo")).strftime("%H:%M")
-    home = traduzir_nome(jogo["home"])
-    away = traduzir_nome(jogo["away"])
-    emoji_home = CLUB_COLORS.get(home, "")
-    emoji_away = CLUB_COLORS.get(away, "")
-    return f"{horario} {emoji_home} {home} x {away} {emoji_away}"
-
+# Busca jogos do dia atual
 def obter_jogos_do_dia():
-    try:
-        url = f"https://api.b365api.com/v3/events/inplay?sport_id=1&token={API_KEY}"
-        response = requests.get(url)
-        if response.status_code == 200:
-            jogos = response.json().get("results", [])
-            return sorted(jogos, key=lambda x: x["time"])
+    url = f"https://{API_FOOTBALL_HOST}/fixtures?live=all&timezone=America/Sao_Paulo"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code != 200:
+        logging.error(f"Erro API Football jogos ao vivo: {response.status_code}")
         return []
-    except Exception as e:
-        logging.error(f"Erro ao obter jogos: {e}")
+    dados = response.json()
+    jogos = dados.get("response", [])
+    return jogos
+
+# Busca jogos agendados para amanhã
+def obter_jogos_amanha():
+    from datetime import date, timedelta
+    dia_amanha = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
+    url = f"https://{API_FOOTBALL_HOST}/fixtures?date={dia_amanha}&timezone=America/Sao_Paulo"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code != 200:
+        logging.error(f"Erro API Football jogos amanhã: {response.status_code}")
         return []
+    dados = response.json()
+    jogos = dados.get("response", [])
+    return jogos
 
-def menu_principal():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔝 Prognósticos do Dia", callback_data='best_tips')],
-        [InlineKeyboardButton("🏆 Principais Campeonatos", callback_data='main_leagues')],
-        [InlineKeyboardButton("🌍 Ligas por Continente", callback_data='by_continent')],
-        [InlineKeyboardButton("⏱️ Todos os Jogos do Dia", callback_data='all_games')],
-        [InlineKeyboardButton("🗓️ Jogos de Amanhã", callback_data='tomorrow_games')],
-    ])
+# Busca estatísticas e forma um texto de análise para apostadores
+def analisar_jogo(fixture_id):
+    url = f"https://{API_FOOTBALL_HOST}/fixtures/statistics?fixture={fixture_id}"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code != 200:
+        logging.error(f"Erro API Football estatísticas: {response.status_code}")
+        return "Estatísticas indisponíveis no momento."
 
-def botao_voltar():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Voltar ao Menu", callback_data='menu')]])
+    dados = response.json()
+    stats = dados.get("response", [])
+    if not stats or len(stats) < 2:
+        return "Estatísticas insuficientes para análise."
+
+    home_stats = {item["type"]: item["value"] for item in stats[0].get("statistics", [])}
+    away_stats = {item["type"]: item["value"] for item in stats[1].get("statistics", [])}
+
+    texto = ""
+
+    gols_casa = home_stats.get("Goals", "N/A")
+    gols_fora = away_stats.get("Goals", "N/A")
+
+    texto += f"⚽ Gols: Casa {gols_casa} x Visitante {gols_fora}\n"
+
+    posse_casa = home_stats.get("Ball Possession", "N/A")
+    posse_fora = away_stats.get("Ball Possession", "N/A")
+    texto += f"🟢 Posse de bola: Casa {posse_casa} | Visitante {posse_fora}\n"
+
+    final_casa = home_stats.get("Shots on Goal", "N/A")
+    final_fora = away_stats.get("Shots on Goal", "N/A")
+    texto += f"🎯 Finalizações no gol: Casa {final_casa} | Visitante {final_fora}\n"
+
+    cart_casa = home_stats.get("Yellow Cards", 0)
+    cart_fora = away_stats.get("Yellow Cards", 0)
+    texto += f"🟨 Cartões amarelos: Casa {cart_casa} | Visitante {cart_fora}\n"
+
+    texto += "\n🧠 Análise para apostas:\n"
+    if posse_casa != "N/A" and posse_fora != "N/A" and final_casa != "N/A" and final_fora != "N/A":
+        posse_casa_pct = int(posse_casa.strip('%'))
+        posse_fora_pct = int(posse_fora.strip('%'))
+        final_casa = int(final_casa)
+        final_fora = int(final_fora)
+        if posse_casa_pct > posse_fora_pct and final_casa > final_fora:
+            texto += "- Favorito claro: time da casa controla o jogo e finaliza mais.\n"
+            texto += "- Recomenda-se aposta em vitória do time da casa e over 1.5 gols.\n"
+        elif posse_fora_pct > posse_casa_pct and final_fora > final_casa:
+            texto += "- Favorito claro: visitante com mais posse e finalizações.\n"
+            texto += "- Recomenda-se aposta em vitória do visitante e over 1.5 gols.\n"
+        else:
+            texto += "- Jogo equilibrado, com chances para ambos os lados.\n"
+            texto += "- Recomenda-se cautela e considerar apostas em ambas marcam.\n"
+    else:
+        texto += "- Dados insuficientes para uma análise detalhada."
+
+    return texto
+
+def formatar_jogo_menu(jogo):
+    data = formatar_hora(jogo["fixture"]["date"])
+    casa = jogo["teams"]["home"]["name"]
+    fora = jogo["teams"]["away"]["name"]
+    return f"{data} - {casa} x {fora}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("🔝 Prognósticos do Dia", callback_data='best_tips')],
+        [InlineKeyboardButton("🏆 Principais Campeonatos", callback_data='main_leagues')],
+        [InlineKeyboardButton("🗓️ Jogos de Amanhã", callback_data='tomorrow_games')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         "*⚽ Bem-vindo ao ProGol AI Bot!*\n\n"
-        "Escolha uma das opções abaixo 👇",
+        "Selecione uma opção para ver prognósticos reais baseados em dados atualizados.",
         parse_mode='Markdown',
-        reply_markup=menu_principal()
+        reply_markup=reply_markup
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    data = query.data
+    logging.info(f"Callback recebido: {data}")
 
-    try:
-        if query.data == 'menu':
-            await query.edit_message_text(
-                "*⚽ Bem-vindo ao ProGol AI Bot!*\n\n"
-                "Escolha uma das opções abaixo 👇",
-                parse_mode='Markdown',
-                reply_markup=menu_principal()
-            )
+    if data == "best_tips":
+        jogos = obter_jogos_do_dia()
+        if not jogos:
+            await query.edit_message_text("⚠️ Nenhum jogo ao vivo encontrado no momento.")
+            return
+        keyboard = []
+        text = "*Jogos ao vivo para prognósticos:*\n"
+        for jogo in jogos:
+            jogo_text = formatar_jogo_menu(jogo)
+            fixture_id = jogo["fixture"]["id"]
+            keyboard.append([InlineKeyboardButton(jogo_text, callback_data=f"analisar_{fixture_id}")])
+        keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="voltar")])
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-        elif query.data == 'best_tips':
-            texto = "🌟 *Bilhete Conservador (90%)*\n\n"
-            texto += "▶️ Botafogo x Flamengo – *+1.5 Gols* (Odd: 1.40)\n"
-            texto += "▶️ Santos x Palmeiras – *Ambas Marcam* (Odd: 1.65)\n"
-            texto += "▶️ Grêmio x Inter – *+8.5 Escanteios* (Odd: 1.55)\n\n"
-            texto += "🔹 *Odd Total:* 3.57\n🧠 *Baseado em estatísticas reais*"
-            await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=botao_voltar())
+    elif data == "main_leagues":
+        ligas = [
+            "Brasileirão Série A",
+            "Premier League",
+            "La Liga",
+            "Serie A",
+            "Bundesliga"
+        ]
+        text = "*Principais Campeonatos:*\n\n" + "\n".join(ligas)
+        keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="voltar")]]
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-        elif query.data == 'main_leagues':
-            texto = "*🏆 Principais Campeonatos:*\n\n"
-            texto += "🇧🇷 Brasileirão\n🇬🇧 Premier League\n🇪🇸 La Liga\n🇮🇹 Serie A\n🇩🇪 Bundesliga"
-            await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=botao_voltar())
+    elif data == "tomorrow_games":
+        jogos = obter_jogos_amanha()
+        if not jogos:
+            await query.edit_message_text("⚠️ Nenhum jogo encontrado para amanhã.")
+            return
+        keyboard = []
+        text = "*Jogos agendados para amanhã:*\n"
+        for jogo in jogos:
+            jogo_text = formatar_jogo_menu(jogo)
+            fixture_id = jogo["fixture"]["id"]
+            keyboard.append([InlineKeyboardButton(jogo_text, callback_data=f"analisar_{fixture_id}")])
+        keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="voltar")])
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-        elif query.data == 'by_continent':
-            continentes = [
-                [InlineKeyboardButton("🌍 Europa", callback_data='continent_europe')],
-                [InlineKeyboardButton("🌎 América do Sul", callback_data='continent_south_america')],
-                [InlineKeyboardButton("🌏 Ásia", callback_data='continent_asia')],
-                [InlineKeyboardButton("🌍 África", callback_data='continent_africa')],
-                [InlineKeyboardButton("🌎 América do Norte", callback_data='continent_north_america')],
-                [InlineKeyboardButton("🌍 Oceania", callback_data='continent_oceania')],
-                [InlineKeyboardButton("🔙 Voltar", callback_data='menu')],
-            ]
-            await query.edit_message_text("Escolha um continente:", reply_markup=InlineKeyboardMarkup(continentes))
+    elif data.startswith("analisar_"):
+        fixture_id = int(data.split("_")[1])
+        texto_analise = analisar_jogo(fixture_id)
+        keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="best_tips")]]
+        await query.edit_message_text(texto_analise, reply_markup=InlineKeyboardMarkup(keyboard))
 
-        elif query.data == 'all_games':
-            jogos = obter_jogos_do_dia()
-            if not jogos:
-                await query.edit_message_text("⚠️ Nenhum jogo no momento.", reply_markup=botao_voltar())
-            else:
-                texto = "*🎯 Jogos ao Vivo:*\n\n"
-                for jogo in jogos[:20]:
-                    texto += formatar_jogo(jogo) + "\n"
-                await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=botao_voltar())
+    elif data == "voltar":
+        await start(update, context)
 
-        elif query.data == 'tomorrow_games':
-            await query.edit_message_text("📅 Em breve: jogos de amanhã com IA!", reply_markup=botao_voltar())
+    else:
+        await query.edit_message_text("⚠️ Opção não implementada.")
 
-        else:
-            await query.edit_message_text("⚠️ Opção ainda não implementada.", reply_markup=botao_voltar())
-
-    except Exception as e:
-        logging.error(f"Erro no callback: {e}")
-        await query.message.reply_text("❌ Ocorreu um erro ao processar a opção.")
-
-# 🟢 Inicializador do bot
 def iniciar_bot():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.run_polling()
 
-# 🔁 Flask para o Render detectar o serviço
-flask_app = Flask(__name__)
-
-@flask_app.route('/')
-def index():
-    return "✅ ProGol AI Bot está rodando!"
-
 if __name__ == "__main__":
-    bot_thread = threading.Thread(target=iniciar_bot)
-    bot_thread.start()
-    flask_app.run(host="0.0.0.0", port=PORT)
+    iniciar_bot()

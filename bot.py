@@ -226,4 +226,4 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def iniciar_bot():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("
+    app.add_handler(CommandHandler("start",start))

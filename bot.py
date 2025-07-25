@@ -6,31 +6,35 @@ from telegram.ext import (
 )
 from datetime import datetime
 import pytz
+import logging
+import threading
+from flask import Flask
 
-# ✅ Tokens
-BOT_TOKEN = "8219603341:AAHsqUktaC5IIEtI8aehyPZtDrrKHWpeZOQ"
-API_KEY = "cadc8d2e9944e5f78dc45bf26ab7a3fa"
+# 🔧 Configuração
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8219603341:AAHsqUktaC5IIEtI8aehyPZtDrrKHWpeZOQ")
+API_KEY = os.getenv("API_KEY", "cadc8d2e9944e5f78dc45bf26ab7a3fa")
+PORT = int(os.environ.get("PORT", 10000))
 
-# ✅ Mapeamento de cores por time (exemplo parcial, adicione conforme precisar)
+logging.basicConfig(level=logging.INFO)
+
+# 🟡 Dicionário de cores por time
 CLUB_COLORS = {
     "Botafogo": "⚫️", "Flamengo": "🔴",
     "Santos": "⚪️", "Palmeiras": "🟢",
     "Corinthians": "⚫️", "São Paulo": "🔴",
-    # Adicione mais conforme necessário
 }
 
-# ✅ Tradução de times
+# 🟡 Traduções de nomes de clubes
 def traduzir_nome(nome):
     traducoes = {
         "Flamengo RJ": "Flamengo",
         "Botafogo RJ": "Botafogo",
         "Palmeiras SP": "Palmeiras",
         "Santos SP": "Santos",
-        # etc...
     }
     return traducoes.get(nome, nome)
 
-# ✅ Formatação bonita do jogo
+# 🟡 Formatação dos jogos
 def formatar_jogo(jogo):
     horario = datetime.fromtimestamp(jogo["timestamp"], pytz.timezone("America/Sao_Paulo")).strftime("%H:%M")
     home = traduzir_nome(jogo["home"])
@@ -39,7 +43,7 @@ def formatar_jogo(jogo):
     emoji_away = CLUB_COLORS.get(away, "")
     return f"{horario} {emoji_home} {home} x {away} {emoji_away}"
 
-# ✅ Requisição à API de jogos do dia
+# 🔵 Buscar jogos ao vivo
 def obter_jogos_do_dia():
     url = f"https://api.b365api.com/v3/events/inplay?sport_id=1&token={API_KEY}"
     response = requests.get(url)
@@ -50,7 +54,7 @@ def obter_jogos_do_dia():
     else:
         return []
 
-# ✅ Comando /start
+# 🔵 Comando /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🔝 Prognósticos do Dia", callback_data='best_tips')],
@@ -67,7 +71,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-# ✅ Manipulador de clique nos botões
+# 🔵 Resposta aos botões
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -97,7 +101,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("⚠️ Nenhum jogo encontrado no momento.")
         else:
             texto = "*🎯 Jogos de Hoje:*\n\n"
-            for jogo in jogos[:20]:  # limitar a 20 jogos para evitar flood
+            for jogo in jogos[:20]:
                 texto += formatar_jogo(jogo) + "\n"
             await query.edit_message_text(texto, parse_mode="Markdown")
 
@@ -107,12 +111,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.edit_message_text("⚠️ Opção ainda não implementada.")
 
-# ✅ Inicializador
-def main():
+# 🔄 Inicializador do bot (em thread separada)
+def iniciar_bot():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.run_polling()
 
+# 🔌 Servidor Flask apenas para manter porta aberta no Render
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def index():
+    return "✅ ProGol AI Bot está rodando!"
+
+# 🔁 Executa o bot + servidor Flask
 if __name__ == "__main__":
-    main()
+    bot_thread = threading.Thread(target=iniciar_bot)
+    bot_thread.start()
+    flask_app.run(host="0.0.0.0", port=PORT)

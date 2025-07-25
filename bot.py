@@ -48,6 +48,7 @@ def get_time_brt(utc_time_str):
 def botao_voltar(voltar_para):
     return [InlineKeyboardButton("🔙 Voltar", callback_data=voltar_para)]
 
+# ✅ Função corrigida
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🔝 Prognósticos do Dia", callback_data='best_tips')],
@@ -56,11 +57,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⏱️ Todos os Jogos do Dia", callback_data='all_games')],
         [InlineKeyboardButton("🗓️ Jogos de Amanhã", callback_data='tomorrow_games')],
     ]
-    await update.message.reply_text(
-        "⚽ *Bem-vindo ao ProGol AI Bot!*\n\nEscolha uma das opções abaixo para ver os jogos e prognósticos:",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+
+    mensagem = "⚽ *Bem-vindo ao ProGol AI Bot!*\n\nEscolha uma das opções abaixo para ver os jogos e prognósticos:"
+
+    if update.message:
+        await update.message.reply_text(
+            mensagem,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(
+            mensagem,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query

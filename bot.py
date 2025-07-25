@@ -61,8 +61,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not jogos:
                 await query.edit_message_text("Nenhum prognóstico disponível hoje.")
                 return
-            texto = "*\ud83c\udf1f Prognósticos do Dia:*
-\n"
+            texto = "*\ud83c\udf1f Prognósticos do Dia:*\n"
             for j in jogos:
                 h = j["teams"]["home"]["name"]
                 a = j["teams"]["away"]["name"]

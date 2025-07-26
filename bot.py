@@ -1,8 +1,11 @@
+import threading
+from flask import Flask
 import telebot
 from telebot import types
 import requests
 from datetime import datetime
 
+# --- Configurações ---
 BOT_TOKEN = "8219603341:AAFCudJRPO4IjKkSNWOfZ09oAU14tTNncSY"
 API_FOOTBALL_KEY = "cadc8d2e9944e5f78dc45bf26ab7a3fa"
 API_FOOTBALL_URL = "https://v3.football.api-sports.io"
@@ -10,6 +13,18 @@ API_FOOTBALL_URL = "https://v3.football.api-sports.io"
 bot = telebot.TeleBot(BOT_TOKEN)
 HEADERS = {"x-apisports-key": API_FOOTBALL_KEY}
 BR_DATE = datetime.now().strftime("%Y-%m-%d")
+
+# --- Flask app para abrir porta 5000 ---
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot ProGolAI está rodando!", 200
+
+def run_flask():
+    app.run(host="0.0.0.0", port=5000)
+
+# --- Handlers Telegram Bot ---
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -20,11 +35,18 @@ def start(message):
     markup.row("📅 Jogos de Amanhã")
     markup.row("🤖 Perguntar à IA")
 
-    bot.send_message(chat_id, "⚽ Bem-vindo ao ProGolAI!\n\n🤖 IA de prognósticos baseada em estatísticas reais da API-Football.\n\nEscolha uma opção:", parse_mode="Markdown", reply_markup=markup)
+    bot.send_message(chat_id, 
+        "⚽ Bem-vindo ao ProGolAI!\n\n🤖 IA de prognósticos baseada em estatísticas reais da API-Football.\n\nEscolha uma opção:", 
+        parse_mode="Markdown", 
+        reply_markup=markup
+    )
 
 @bot.message_handler(func=lambda msg: msg.text == "🤖 Perguntar à IA")
 def ativar_modo_ia(message):
-    bot.send_message(message.chat.id, "🤖 Modo IA ativado!\n\nMe pergunte algo como:\n❓ Flamengo ganha hoje?\n❓ Qual jogo tem mais escanteios?", parse_mode="Markdown")
+    bot.send_message(message.chat.id, 
+        "🤖 Modo IA ativado!\n\nMe pergunte algo como:\n❓ Flamengo ganha hoje?\n❓ Qual jogo tem mais escanteios?", 
+        parse_mode="Markdown"
+    )
 
 @bot.message_handler(func=lambda msg: True)
 def responder_ia(message):
@@ -37,7 +59,12 @@ def responder_ia(message):
         resposta = analisar_time_hoje(time)
         bot.send_message(message.chat.id, resposta, parse_mode="Markdown")
     else:
-        bot.send_message(message.chat.id, "❓ Ainda estou aprendendo! Reformule sua pergunta ou mencione um time conhecido.", parse_mode="Markdown")
+        bot.send_message(message.chat.id, 
+            "❓ Ainda estou aprendendo! Reformule sua pergunta ou mencione um time conhecido.", 
+            parse_mode="Markdown"
+        )
+
+# --- Funções para análise com API-Football ---
 
 def buscar_time_id(nome):
     url = f"{API_FOOTBALL_URL}/teams?search={nome}&country=Brazil"
@@ -75,7 +102,13 @@ def analisar_time_hoje(time_nome):
                 elif stat["type"] == "Ball Possession":
                     posse_time = stat["value"]
 
-    return f"📊 *Análise: {time_nome} x {adversario['name']}*\n\n🎯 Finalizações: {gols_time}\n🚩 Escanteios: {escanteios_time}\n📊 Posse: {posse_time}\n\n🔁 Sugestão: Dupla hipótese 1X\n🎯 Over 1.5 sugerido\n\n🧠 Estatísticas reais via API-Football."
+    return (f"📊 *Análise: {time_nome} x {adversario['name']}*\n\n"
+            f"🎯 Finalizações: {gols_time}\n"
+            f"🚩 Escanteios: {escanteios_time}\n"
+            f"📊 Posse: {posse_time}\n\n"
+            f"🔁 Sugestão: Dupla hipótese 1X\n"
+            f"🎯 Over 1.5 sugerido\n\n"
+            f"🧠 Estatísticas reais via API-Football.")
 
 def jogos_com_escanteios_altos():
     url = f"{API_FOOTBALL_URL}/fixtures?date={BR_DATE}"
@@ -99,6 +132,11 @@ def jogos_com_escanteios_altos():
             encontrou = True
     return resultado if encontrou else "❌ Nenhum jogo com muitos escanteios hoje."
 
+# --- Main ---
+
 if __name__ == "__main__":
-    print("Bot ProGolAI rodando...")
+    print("Bot ProGolAI iniciado e rodando...")
+    # Inicia Flask em thread separada para abrir porta 5000
+    threading.Thread(target=run_flask).start()
+    # Inicia polling Telegram na thread principal
     bot.infinity_polling()

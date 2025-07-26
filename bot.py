@@ -1,46 +1,43 @@
 import os
 import requests
-import pytz
 import logging
-import asyncio
+import threading
+import pytz
 from datetime import datetime, timedelta
 from flask import Flask
-from threading import Thread
-
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
+    ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 )
 
-# Configurações
-BOT_TOKEN = os.getenv("BOT_TOKEN", "SEU_TOKEN_AQUI")
-API_FOOTBALL_TOKEN = os.getenv("API_FOOTBALL_TOKEN", "SUA_CHAVE_API_AQUI")
+# 🔧 Configuração de variáveis
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8219603341:AAHsqUktaC5IIEtI8aehyPZtDrrKHWpeZOQ")
+API_KEY = os.getenv("API_KEY", "cadc8d2e9944e5f78dc45bf26ab7a3fa")
 PORT = int(os.environ.get("PORT", 10000))
 API_BASE = "https://v3.football.api-sports.io"
-HEADERS = {"x-apisports-key": API_FOOTBALL_TOKEN}
+HEADERS = {"x-apisports-key": API_KEY}
 
-# Logging
-logging.basicConfig(level=logging.INFO)
-
-# Emojis
+# 📊 Emojis por clube
 CLUB_COLORS = {
-    "Botafogo": "⚫️", "Flamengo": "🔴", "Santos": "⚪️",
-    "Palmeiras": "🟢", "Corinthians": "⚫️", "São Paulo": "🔴"
+    "Botafogo": "⚫️", "Flamengo": "🔴", "Santos": "⚪️", "Palmeiras": "🟢",
+    "Corinthians": "⚫️", "São Paulo": "🔴"
 }
+
+# 🌍 Emojis por país
 COUNTRY_FLAGS = {
     "Brazil": "🇧🇷", "England": "🇬🇧", "Spain": "🇪🇸", "Italy": "🇮🇹",
     "Germany": "🇩🇪", "France": "🇫🇷", "Argentina": "🇦🇷", "Portugal": "🇵🇹"
 }
 
-# Utilidades
+# ⏰ Conversão de horário
 def get_time_brt(utc_time_str):
     utc_dt = datetime.strptime(utc_time_str, "%Y-%m-%dT%H:%M:%S%z")
     brt_tz = pytz.timezone("America/Sao_Paulo")
-    brt_dt = utc_dt.astimezone(brt_tz)
-    return brt_dt.strftime("%d/%m %H:%M")
+    return utc_dt.astimezone(brt_tz).strftime("%H:%M")
 
-def botao_voltar(voltar_para):
-    return [InlineKeyboardButton("🔙 Voltar", callback_data=voltar_para)]
+# 🔙 Botão voltar
+def botao_voltar(callback):
+    return [InlineKeyboardButton("🔙 Voltar", callback_data=callback)]
 
 # /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -57,7 +54,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# Botão Handler
+# 🔘 Botões do menu
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -68,13 +65,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await start(update, context)
 
         elif data == "best_tips":
-            texto = (
-                "🌟 *Bilhete do Dia (Baseado em Estatísticas)*\n\n"
-                "➡️ Palmeiras x São Paulo – +1.5 Gols\n"
-                "➡️ Atlético-MG x Cruzeiro – Ambas Marcam\n"
-                "➡️ Flamengo x Vasco – +8.5 Escanteios\n\n"
-                "🔹 Odds ilustrativas\n🧠 Baseado em estatísticas reais"
-            )
+            texto = "🌟 *Bilhete do Dia (Baseado em Estatísticas)*\n\n"
+            texto += "➡️ Palmeiras x São Paulo – +1.5 Gols\n"
+            texto += "➡️ Atlético-MG x Cruzeiro – Ambas Marcam\n"
+            texto += "➡️ Flamengo x Vasco – +8.5 Escanteios\n\n"
+            texto += "🔹 Odds ilustrativas\n🧠 Baseado em padrões estatísticos reais"
             await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([botao_voltar("start")]))
 
         elif data == "main_leagues":
@@ -94,18 +89,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             url = f"{API_BASE}/fixtures?league={league_id}&season=2023&next=10"
             res = requests.get(url, headers=HEADERS).json()
             jogos = res.get("response", [])
-            if not jogos:
-                await query.edit_message_text("Nenhum jogo encontrado.")
-                return
             keyboard = []
             for j in jogos:
-                fixture = j["fixture"]
-                dt = get_time_brt(fixture["date"])
+                dt = get_time_brt(j["fixture"]["date"])
                 home = j["teams"]["home"]["name"]
                 away = j["teams"]["away"]["name"]
                 emoji_home = CLUB_COLORS.get(home, "")
                 emoji_away = CLUB_COLORS.get(away, "")
-                keyboard.append([InlineKeyboardButton(f"{dt} {emoji_home} {home} x {away} {emoji_away}", callback_data=f"match_{fixture['id']}")])
+                keyboard.append([InlineKeyboardButton(f"{dt} {emoji_home} {home} x {away} {emoji_away}", callback_data=f"match_{j['fixture']['id']}")])
             keyboard.append(botao_voltar("main_leagues"))
             await query.edit_message_text("🕹️ *Jogos Próximos:*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -127,29 +118,52 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 texto += f"{tipo}: {val_home} x {val_away}\n"
             await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([botao_voltar("main_leagues")]))
 
-        else:
-            await query.edit_message_text("⚠️ Opção inválida ou não implementada.")
+        elif data == "all_games":
+            hoje = datetime.now().strftime('%Y-%m-%d')
+            url = f"{API_BASE}/fixtures?date={hoje}&next=20"
+            res = requests.get(url, headers=HEADERS).json()
+            jogos = res.get("response", [])
+            keyboard = []
+            for j in jogos:
+                dt = get_time_brt(j["fixture"]["date"])
+                home = j["teams"]["home"]["name"]
+                away = j["teams"]["away"]["name"]
+                keyboard.append([InlineKeyboardButton(f"{dt} - {home} x {away}", callback_data=f"match_{j['fixture']['id']}")])
+            keyboard.append(botao_voltar("start"))
+            await query.edit_message_text("📅 Jogos de hoje:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+        elif data == "tomorrow_games":
+            dia = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+            url = f"{API_BASE}/fixtures?date={dia}&next=20"
+            res = requests.get(url, headers=HEADERS).json()
+            jogos = res.get("response", [])
+            keyboard = []
+            for j in jogos:
+                dt = get_time_brt(j["fixture"]["date"])
+                home = j["teams"]["home"]["name"]
+                away = j["teams"]["away"]["name"]
+                keyboard.append([InlineKeyboardButton(f"{dt} - {home} x {away}", callback_data=f"match_{j['fixture']['id']}")])
+            keyboard.append(botao_voltar("start"))
+            await query.edit_message_text("🗓️ Jogos de amanhã:", reply_markup=InlineKeyboardMarkup(keyboard))
+
     except Exception as e:
-        logging.error(f"Erro: {e}")
-        await query.edit_message_text("❌ Ocorreu um erro interno.")
+        logging.error(f"Erro interno: {e}")
+        await query.edit_message_text("❌ Erro interno ao processar sua solicitação.")
 
-# Inicia o bot assincronamente
-async def iniciar_bot():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-    await app.updater.wait_until_closed()
-
-# Flask para manter vivo no Render
+# 🌐 Webserver para manter online no Render
 flask_app = Flask(__name__)
 
 @flask_app.route("/")
-def index():
-    return "✅ ProGol AI Bot está rodando!"
+def home():
+    return "✅ ProGol AI Bot rodando com sucesso!"
+
+# 🚀 Inicializador
+def rodar_bot():
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(button_handler))
+    application.run_polling()
 
 if __name__ == "__main__":
-    Thread(target=lambda: flask_app.run(host="0.0.0.0", port=PORT)).start()
-    asyncio.run(iniciar_bot())
+    threading.Thread(target=rodar_bot).start()
+    flask_app.run(host="0.0.0.0", port=PORT)

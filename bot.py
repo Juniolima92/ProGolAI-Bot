@@ -1,15 +1,16 @@
+import os
 import telebot
 from telebot import types
 import requests
 from datetime import datetime
 
-BOT_TOKEN = "8219603341:AAHsqUktaC5IIEtI8aehyPZtDrrKHWpeZOQ"
-API_FOOTBALL_KEY = "cadc8d2e9944e5f78dc45bf26ab7a3fa"
+# Usa variáveis de ambiente se disponíveis (Render), senão usa valores fixos
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8219603341:AAFCudJRPO4IjKkSNWOfZ09oAU14tTNncSY")
+API_FOOTBALL_KEY = os.getenv("API_KEY", "cadc8d2e9944e5f78dc45bf26ab7a3fa")
 API_FOOTBALL_URL = "https://v3.football.api-sports.io"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 HEADERS = {"x-apisports-key": API_FOOTBALL_KEY}
-
 BR_DATE = datetime.now().strftime("%Y-%m-%d")
 
 
@@ -24,15 +25,14 @@ def start(message):
                 caption="⚽ Bem-vindo ao ProGolAI!\n\n🤖 IA de prognósticos baseada em estatísticas reais da API-Football.\n\nEscolha abaixo uma opção para começar:",
                 parse_mode="Markdown"
             )
-    except Exception as e:
-        bot.send_message(chat_id, "⚽ Bem-vindo ao ProGolAI!\n\n(Logo não encontrada)\n\nEscolha abaixo uma opção para começar:", parse_mode="Markdown")
+    except Exception:
+        bot.send_message(chat_id, "⚽ Bem-vindo ao ProGolAI!\n\n(Logo não carregada)\n\nEscolha abaixo uma opção para começar:", parse_mode="Markdown")
 
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row("📈 Melhores Prognósticos do Dia")
     markup.row("🌍 Ver Ligas por Continente")
     markup.row("📅 Jogos de Amanhã")
     markup.row("🤖 Perguntar à IA")
-
     bot.send_message(chat_id, "📋 *Menu Inicial:*", parse_mode="Markdown", reply_markup=markup)
 
 

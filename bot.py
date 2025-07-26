@@ -206,4 +206,8 @@ def index():
 async def iniciar_bot():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(
+    app.add_handler(CallbackQueryHandler(button_handler))
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    await app.updater.idle()

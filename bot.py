@@ -9,9 +9,8 @@ import pytz
 import logging
 import threading
 from flask import Flask
-import asyncio
 
-# 🔧 Configurações
+# Configurações
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8219603341:AAHsqUktaC5IIEtI8aehyPZtDrrKHWpeZOQ")
 API_FOOTBALL_TOKEN = os.getenv("API_FOOTBALL_TOKEN", "cadc8d2e9944e5f78dc45bf26ab7a3fa")
 PORT = int(os.environ.get("PORT", 10000))
@@ -23,22 +22,20 @@ HEADERS = {
 
 logging.basicConfig(level=logging.INFO)
 
-# ⚽ Emojis por clube (parcial)
+# Emojis por clube (parcial)
 CLUB_COLORS = {
     "Botafogo": "⚫️", "Flamengo": "🔴",
     "Santos": "⚪️", "Palmeiras": "🟢",
     "Corinthians": "⚫️", "São Paulo": "🔴"
 }
 
-# 🌍 Emojis por país (parcial)
+# Emojis por país (parcial)
 COUNTRY_FLAGS = {
     "Brazil": "🇧🇷", "England": "🇬🇧",
     "Spain": "🇪🇸", "Italy": "🇮🇹",
     "Germany": "🇩🇪", "France": "🇫🇷",
     "Argentina": "🇦🇷", "Portugal": "🇵🇹"
 }
-
-chat_state = {}
 
 def get_time_brt(utc_time_str):
     utc_dt = datetime.strptime(utc_time_str, "%Y-%m-%dT%H:%M:%S%z")
@@ -67,7 +64,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
-    chat_id = query.message.chat.id
 
     try:
         if data == "start":
@@ -196,20 +192,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Erro: {e}")
         await query.edit_message_text("❌ Ocorreu um erro interno.")
 
-# 🚀 Inicialização do bot
-async def iniciar_bot():
+def iniciar_bot():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-    await app.updater.idle()
+    app.run_polling()
 
-def run_bot():
-    asyncio.run(iniciar_bot())
-
-# 🌐 Flask para servidor web
 flask_app = Flask(__name__)
 
 @flask_app.route("/")
@@ -217,6 +205,5 @@ def index():
     return "✅ ProGol AI Bot está rodando!"
 
 if __name__ == "__main__":
-    # Executa o bot em thread separada para não bloquear o Flask
-    threading.Thread(target=run_bot).start()
+    threading.Thread(target=iniciar_bot, daemon=True).start()
     flask_app.run(host="0.0.0.0", port=PORT)

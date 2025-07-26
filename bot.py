@@ -9,7 +9,7 @@ import pytz
 import logging
 import threading
 from flask import Flask
-import asyncio  # Import adicionado para asyncio.run()
+import asyncio
 
 # 🔧 Configurações
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8219603341:AAHsqUktaC5IIEtI8aehyPZtDrrKHWpeZOQ")
@@ -196,13 +196,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Erro: {e}")
         await query.edit_message_text("❌ Ocorreu um erro interno.")
 
-# 🚀 Inicialização
-flask_app = Flask(__name__)
-
-@flask_app.route("/")
-def index():
-    return "✅ ProGol AI Bot está rodando!"
-
+# 🚀 Inicialização do bot
 async def iniciar_bot():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -211,3 +205,18 @@ async def iniciar_bot():
     await app.start()
     await app.updater.start_polling()
     await app.updater.idle()
+
+def run_bot():
+    asyncio.run(iniciar_bot())
+
+# 🌐 Flask para servidor web
+flask_app = Flask(__name__)
+
+@flask_app.route("/")
+def index():
+    return "✅ ProGol AI Bot está rodando!"
+
+if __name__ == "__main__":
+    # Executa o bot em thread separada para não bloquear o Flask
+    threading.Thread(target=run_bot).start()
+    flask_app.run(host="0.0.0.0", port=PORT)

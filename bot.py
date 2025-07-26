@@ -7,14 +7,19 @@ from telegram.ext import (
 from datetime import datetime, timedelta
 import pytz
 import logging
+import threading
 from flask import Flask
+import asyncio  # Import adicionado para asyncio.run()
 
 # 🔧 Configurações
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8219603341:AAHsqUktaC5IIEtI8aehyPZtDrrKHWpeZOQ")
 API_FOOTBALL_TOKEN = os.getenv("API_FOOTBALL_TOKEN", "cadc8d2e9944e5f78dc45bf26ab7a3fa")
 PORT = int(os.environ.get("PORT", 10000))
 API_BASE = "https://v3.football.api-sports.io"
-HEADERS = { "x-apisports-key": API_FOOTBALL_TOKEN }
+
+HEADERS = {
+    "x-apisports-key": API_FOOTBALL_TOKEN
+}
 
 logging.basicConfig(level=logging.INFO)
 
@@ -32,6 +37,8 @@ COUNTRY_FLAGS = {
     "Germany": "🇩🇪", "France": "🇫🇷",
     "Argentina": "🇦🇷", "Portugal": "🇵🇹"
 }
+
+chat_state = {}
 
 def get_time_brt(utc_time_str):
     utc_dt = datetime.strptime(utc_time_str, "%Y-%m-%dT%H:%M:%S%z")
@@ -60,6 +67,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
+    chat_id = query.message.chat.id
 
     try:
         if data == "start":
@@ -188,29 +196,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Erro: {e}")
         await query.edit_message_text("❌ Ocorreu um erro interno.")
 
-# 🌐 Web para Render
+# 🚀 Inicialização
 flask_app = Flask(__name__)
 
 @flask_app.route("/")
 def index():
     return "✅ ProGol AI Bot está rodando!"
 
-# 🚀 Inicialização com asyncio para Render
-if __name__ == "__main__":
-    import asyncio
-
-    async def iniciar_bot_async():
-        app = ApplicationBuilder().token(BOT_TOKEN).build()
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(CallbackQueryHandler(button_handler))
-        await app.initialize()
-        await app.start()
-        await app.updater.start_polling()
-        await app.updater.idle()
-
-    def run_all():
-        loop = asyncio.get_event_loop()
-        loop.create_task(iniciar_bot_async())
-        flask_app.run(host="0.0.0.0", port=PORT)
-
-    run_all()
+async def iniciar_bot():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(

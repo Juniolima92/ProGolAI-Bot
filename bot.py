@@ -1,42 +1,38 @@
 import os
 import requests
+import pytz
+import logging
+import asyncio
+from datetime import datetime, timedelta
+from flask import Flask
+from threading import Thread
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 )
-from datetime import datetime, timedelta
-import pytz
-import logging
-import threading
-from flask import Flask
 
 # Configurações
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8219603341:AAHsqUktaC5IIEtI8aehyPZtDrrKHWpeZOQ")
-API_FOOTBALL_TOKEN = os.getenv("API_FOOTBALL_TOKEN", "cadc8d2e9944e5f78dc45bf26ab7a3fa")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "SEU_TOKEN_AQUI")
+API_FOOTBALL_TOKEN = os.getenv("API_FOOTBALL_TOKEN", "SUA_CHAVE_API_AQUI")
 PORT = int(os.environ.get("PORT", 10000))
 API_BASE = "https://v3.football.api-sports.io"
+HEADERS = {"x-apisports-key": API_FOOTBALL_TOKEN}
 
-HEADERS = {
-    "x-apisports-key": API_FOOTBALL_TOKEN
-}
-
+# Logging
 logging.basicConfig(level=logging.INFO)
 
-# Emojis por clube (parcial)
+# Emojis
 CLUB_COLORS = {
-    "Botafogo": "⚫️", "Flamengo": "🔴",
-    "Santos": "⚪️", "Palmeiras": "🟢",
-    "Corinthians": "⚫️", "São Paulo": "🔴"
+    "Botafogo": "⚫️", "Flamengo": "🔴", "Santos": "⚪️",
+    "Palmeiras": "🟢", "Corinthians": "⚫️", "São Paulo": "🔴"
 }
-
-# Emojis por país (parcial)
 COUNTRY_FLAGS = {
-    "Brazil": "🇧🇷", "England": "🇬🇧",
-    "Spain": "🇪🇸", "Italy": "🇮🇹",
-    "Germany": "🇩🇪", "France": "🇫🇷",
-    "Argentina": "🇦🇷", "Portugal": "🇵🇹"
+    "Brazil": "🇧🇷", "England": "🇬🇧", "Spain": "🇪🇸", "Italy": "🇮🇹",
+    "Germany": "🇩🇪", "France": "🇫🇷", "Argentina": "🇦🇷", "Portugal": "🇵🇹"
 }
 
+# Utilidades
 def get_time_brt(utc_time_str):
     utc_dt = datetime.strptime(utc_time_str, "%Y-%m-%dT%H:%M:%S%z")
     brt_tz = pytz.timezone("America/Sao_Paulo")
@@ -46,6 +42,7 @@ def get_time_brt(utc_time_str):
 def botao_voltar(voltar_para):
     return [InlineKeyboardButton("🔙 Voltar", callback_data=voltar_para)]
 
+# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🔝 Prognósticos do Dia", callback_data='best_tips')],
@@ -55,11 +52,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🗓️ Jogos de Amanhã", callback_data='tomorrow_games')],
     ]
     await update.message.reply_text(
-        "⚽ *Bem-vindo ao ProGol AI Bot!*\n\nEscolha uma das opções abaixo para ver os jogos e prognósticos:",
+        "⚽ *Bem-vindo ao ProGol AI Bot!*\n\nEscolha uma das opções abaixo:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+# Botão Handler
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -70,11 +68,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await start(update, context)
 
         elif data == "best_tips":
-            texto = "🌟 *Bilhete do Dia (Baseado em Estatísticas)*\n\n"
-            texto += "➡️ Palmeiras x São Paulo – +1.5 Gols\n"
-            texto += "➡️ Atlético-MG x Cruzeiro – Ambas Marcam\n"
-            texto += "➡️ Flamengo x Vasco – +8.5 Escanteios\n\n"
-            texto += "🔹 Odds ilustrativas\n🧠 Baseado em padrões estatísticos reais"
+            texto = (
+                "🌟 *Bilhete do Dia (Baseado em Estatísticas)*\n\n"
+                "➡️ Palmeiras x São Paulo – +1.5 Gols\n"
+                "➡️ Atlético-MG x Cruzeiro – Ambas Marcam\n"
+                "➡️ Flamengo x Vasco – +8.5 Escanteios\n\n"
+                "🔹 Odds ilustrativas\n🧠 Baseado em estatísticas reais"
+            )
             await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([botao_voltar("start")]))
 
         elif data == "main_leagues":
@@ -127,88 +127,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 texto += f"{tipo}: {val_home} x {val_away}\n"
             await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([botao_voltar("main_leagues")]))
 
-        elif data == "by_continent":
-            continentes = [
-                ("Europa", "EU"), ("América do Sul", "SA"),
-                ("Ásia", "AS"), ("África", "AF"),
-                ("América do Norte", "NA"), ("Oceania", "OC")
-            ]
-            keyboard = [[InlineKeyboardButton(c[0], callback_data=f"continent_{c[1]}")] for c in continentes]
-            keyboard.append(botao_voltar("start"))
-            await query.edit_message_text("🌍 Escolha um continente:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-        elif data.startswith("continent_"):
-            cont = data.split("_")[1]
-            url = f"{API_BASE}/countries"
-            res = requests.get(url, headers=HEADERS).json()
-            countries = [c for c in res.get("response", []) if c["continent"] == cont]
-            keyboard = [[InlineKeyboardButton(f"{COUNTRY_FLAGS.get(c['name'], '')} {c['name']}", callback_data=f"country_{c['name']}")] for c in countries]
-            keyboard.append(botao_voltar("by_continent"))
-            await query.edit_message_text("🌐 Escolha um país:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-        elif data.startswith("country_"):
-            country = data.split("_", 1)[1]
-            url = f"{API_BASE}/leagues?country={country}&season=2023"
-            res = requests.get(url, headers=HEADERS).json()
-            leagues = res.get("response", [])
-            keyboard = [[InlineKeyboardButton(l["league"]["name"], callback_data=f"league_{l['league']['id']}")] for l in leagues]
-            keyboard.append(botao_voltar("by_continent"))
-            await query.edit_message_text(f"Ligas em {country}:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-        elif data == "all_games":
-            hoje = datetime.now().strftime('%Y-%m-%d')
-            url = f"{API_BASE}/fixtures?date={hoje}&next=20"
-            res = requests.get(url, headers=HEADERS).json()
-            jogos = res.get("response", [])
-            keyboard = []
-            for j in jogos:
-                fixture = j["fixture"]
-                dt = get_time_brt(fixture["date"])
-                home = j["teams"]["home"]["name"]
-                away = j["teams"]["away"]["name"]
-                keyboard.append([InlineKeyboardButton(f"{dt} - {home} x {away}", callback_data=f"match_{fixture['id']}")])
-            keyboard.append(botao_voltar("start"))
-            await query.edit_message_text("📅 Jogos de hoje:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-        elif data == "tomorrow_games":
-            dia = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
-            url = f"{API_BASE}/fixtures?date={dia}&next=20"
-            res = requests.get(url, headers=HEADERS).json()
-            jogos = res.get("response", [])
-            keyboard = []
-            for j in jogos:
-                fixture = j["fixture"]
-                dt = get_time_brt(fixture["date"])
-                home = j["teams"]["home"]["name"]
-                away = j["teams"]["away"]["name"]
-                keyboard.append([InlineKeyboardButton(f"{dt} - {home} x {away}", callback_data=f"match_{fixture['id']}")])
-            keyboard.append(botao_voltar("start"))
-            await query.edit_message_text("🗓️ Jogos de amanhã:", reply_markup=InlineKeyboardMarkup(keyboard))
-
         else:
             await query.edit_message_text("⚠️ Opção inválida ou não implementada.")
-
     except Exception as e:
         logging.error(f"Erro: {e}")
         await query.edit_message_text("❌ Ocorreu um erro interno.")
 
-import asyncio
+# Inicia o bot assincronamente
+async def iniciar_bot():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    await app.updater.wait_until_closed()
 
+# Flask para manter vivo no Render
 flask_app = Flask(__name__)
 
 @flask_app.route("/")
 def index():
     return "✅ ProGol AI Bot está rodando!"
 
-async def run_bot():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    await app.run_polling()
-
-def start_async_loop():
-    asyncio.run(run_bot())
-
 if __name__ == "__main__":
-    threading.Thread(target=start_async_loop, daemon=True).start()
-    flask_app.run(host="0.0.0.0", port=PORT)
+    Thread(target=lambda: flask_app.run(host="0.0.0.0", port=PORT)).start()
+    asyncio.run(iniciar_bot())

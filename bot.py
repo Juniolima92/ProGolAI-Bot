@@ -1,177 +1,36 @@
-import requests
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, filters,
-    CallbackQueryHandler, ContextTypes
-)
-from flask import Flask
-from threading import Thread
+bot.py (versão com estatísticas reais via API-Football) 
 
-BOT_TOKEN = "8219603341:AAFCudJRPO4IjKkSNWOfZ09oAU14tTNncSY"
-API_KEY = "cadc8d2e9944e5f78dc45bf26ab7a3fa"
+import telebot import requests from telebot import types from datetime import datetime
 
-app = Flask(__name__)
+BOT_TOKEN = "8219603341:AAHsqUktaC5IIEtI8aehyPZtDrrKHWpeZOQ" API_FOOTBALL_KEY = "cadc8d2e9944e5f78dc45bf26ab7a3fa" API_FOOTBALL_URL = "https://v3.football.api-sports.io"
 
-@app.route('/ping')
-def ping():
-    return "OK", 200
+bot = telebot.TeleBot(BOT_TOKEN) HEADERS = {"x-apisports-key": API_FOOTBALL_KEY}
 
-def run_flask():
-    app.run(host="0.0.0.0", port=5000)
+Utilitários 
 
-HEADERS = {
-    "x-apisports-key": API_KEY
-}
+BR_DATE = datetime.now().strftime("%Y-%m-%d")
 
-BASE_URL = "https://api-football-v1.p.rapidapi.com/v3"
+========== /start ============ 
 
-def get_fixtures_today():
-    from datetime import datetime
-    date_today = datetime.utcnow().strftime('%Y-%m-%d')
-    url = f"{BASE_URL}/fixtures?date={date_today}"
-    response = requests.get(url, headers=HEADERS)
-    if response.status_code == 200:
-        data = response.json()
-        return data.get("response", [])
-    return []
+@bot.message_handler(commands=['start']) def start(message): chat_id = message.chat.id with open("progol_logo.jpg", "rb") as photo: bot.send_photo(chat_id, photo, caption="⚽ Bem-vindo ao ProGolAI!\n\n🤖 IA de prognósticos baseada em estatísticas reais da API-Football.\n\nEscolha abaixo uma opção para começar:", parse_mode="Markdown")
 
-def get_fixture_stats(fixture_id):
-    url = f"{BASE_URL}/fixtures/statistics?fixture={fixture_id}"
-    response = requests.get(url, headers=HEADERS)
-    if response.status_code == 200:
-        data = response.json()
-        return data.get("response", [])
-    return []
+markup = types.ReplyKeyboardMarkup(resize_keyboard=True) markup.row("📈 Melhores Prognósticos do Dia") markup.row("🌍 Ver Ligas por Continente") markup.row("📅 Jogos de Amanhã") markup.row("🤖 Perguntar à IA") bot.send_message(chat_id, "📋 *Menu Inicial:*", parse_mode="Markdown", reply_markup=markup) ========== MODO IA ============ 
 
-def calculate_probabilities(stats):
-    if not stats:
-        return 0.33, 0.34, 0.33
-    try:
-        home_stats = stats[0]
-        away_stats = stats[1]
-        home_shots = next((s['value'] for s in home_stats['statistics'] if s['type'] == 'Shots on Goal'), 0)
-        away_shots = next((s['value'] for s in away_stats['statistics'] if s['type'] == 'Shots on Goal'), 0)
-        total = home_shots + away_shots
-        if total == 0:
-            return 0.33, 0.34, 0.33
-        p1 = home_shots / total
-        p2 = away_shots / total
-        px = 1 - p1 - p2
-        if px < 0: px = 0
-        soma = p1 + px + p2
-        return p1 / soma, px / soma, p2 / soma
-    except Exception:
-        return 0.33, 0.34, 0.33
+@bot.message_handler(func=lambda msg: msg.text == "🤖 Perguntar à IA") def ativar_modo_ia(message): bot.send_message(message.chat.id, "🤖 Modo IA ativado!\n\nMe pergunte algo como:\n❓ Flamengo ganha hoje?\n❓ Qual jogo tem mais escanteios?\n❓ Vale apostar no Over 2.5 do Real Madrid?", parse_mode="Markdown")
 
-def calcular_dupla_hipotese(p1, px, p2):
-    return p1 + px, p1 + p2, px + p2
+@bot.message_handler(func=lambda msg: True) def responder_ia(message): pergunta = message.text.lower()
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("🔝 Prognósticos do Dia", callback_data='prog')],
-        [InlineKeyboardButton("🏆 Principais Campeonatos", callback_data='campeonatos')],
-        [InlineKeyboardButton("🌍 Ligas por Continente", callback_data='ligas')],
-        [InlineKeyboardButton("⏱️ Todos os Jogos do Dia", callback_data='jogos_hoje')],
-        [InlineKeyboardButton("🗓️ Jogos de Amanhã", callback_data='jogos_amanha')],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        "👋 Bem-vindo ao ProGolAI!\nEscolha uma opção no menu abaixo:",
-        reply_markup=reply_markup
-    )
+if "escanteio" in pergunta: resposta = jogos_com_escanteios_altos() bot.send_message(message.chat.id, resposta, parse_mode="Markdown") elif any(time in pergunta for time in ["flamengo", "palmeiras", "real madrid"]): time = pergunta.split()[0].capitalize() resposta = analisar_time_hoje(time) bot.send_message(message.chat.id, resposta, parse_mode="Markdown") else: bot.send_message(message.chat.id, "❓ Ainda estou aprendendo! Reformule sua pergunta ou mencione um time conhecido.", parse_mode="Markdown") ========== FUNÇÕES REAIS DE ANÁLISE ============ 
 
-async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    print(f"Callback recebido: {data}")
+def buscar_time_id(nome): url = f"{API_FOOTBALL_URL}/teams?search={nome}&country=Brazil" r = requests.get(url, headers=HEADERS) data = r.json() if data["response"]: return data["response"][0]["team"]["id"] return None
 
-    if data == 'prog':
-        fixtures = get_fixtures_today()
-        if not fixtures:
-            await query.edit_message_text("❌ Nenhum jogo encontrado para hoje.",
-                                          reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Voltar", callback_data='menu')]]))
-            return
+def analisar_time_hoje(time_nome): team_id = buscar_time_id(time_nome) if not team_id: return f"❌ Time {time_nome} não encontrado."
 
-        msg = "🎯 *Prognósticos do Dia*\n\n"
-        count = 0
-        for f in fixtures:
-            home = f['teams']['home']['name']
-            away = f['teams']['away']['name']
-            fixture_id = f['fixture']['id']
-            stats = get_fixture_stats(fixture_id)
-            p1, px, p2 = calculate_probabilities(stats)
-            dupla_1X, dupla_12, dupla_X2 = calcular_dupla_hipotese(p1, px, p2)
-            msg += (f"➡️ {home} x {away}\n"
-                    f"Probabilidades:\n"
-                    f"🏠 Casa: {p1*100:.1f}%\n"
-                    f"🤝 Empate: {px*100:.1f}%\n"
-                    f"🚩 Visitante: {p2*100:.1f}%\n"
-                    f"Dupla hipótese:\n"
-                    f"1X: {dupla_1X*100:.1f}%, 12: {dupla_12*100:.1f}%, X2: {dupla_X2*100:.1f}%\n\n")
-            count += 1
-            if count >= 5:
-                break
-        await query.edit_message_text(msg, parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Voltar", callback_data='menu')]]))
-    elif data == 'menu':
-        keyboard = [
-            [InlineKeyboardButton("🔝 Prognósticos do Dia", callback_data='prog')],
-            [InlineKeyboardButton("🏆 Principais Campeonatos", callback_data='campeonatos')],
-            [InlineKeyboardButton("🌍 Ligas por Continente", callback_data='ligas')],
-            [InlineKeyboardButton("⏱️ Todos os Jogos do Dia", callback_data='jogos_hoje')],
-            [InlineKeyboardButton("🗓️ Jogos de Amanhã", callback_data='jogos_amanha')],
-        ]
-        await query.edit_message_text("👋 Menu Inicial:", reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        await query.edit_message_text("Opção desconhecida.",
-                                      reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Voltar", callback_data='menu')]]))
+url = f"{API_FOOTBALL_URL}/fixtures?team={team_id}&date={BR_DATE}" r = requests.get(url, headers=HEADERS).json() if not r["response"]: return f"📅 O *{time_nome}* não tem jogo hoje." jogo = r["response"][0] adversario = jogo["teams"]["away"] if jogo["teams"]["home"]["name"] == time_nome else jogo["teams"]["home"] partida_id = jogo["fixture"]["id"] # Estatísticas estat_url = f"{API_FOOTBALL_URL}/fixtures/statistics?fixture={partida_id}" stats = requests.get(estat_url, headers=HEADERS).json() gols_time = escanteios_time = posse_time = "N/D" for s in stats["response"]: if s["team"]["name"].lower() == time_nome.lower(): for stat in s["statistics"]: if stat["type"] == "Total Shots": gols_time = stat["value"] elif stat["type"] == "Corner Kicks": escanteios_time = stat["value"] elif stat["type"] == "Ball Possession": posse_time = stat["value"] return f"📊 *Análise: {time_nome} x {adversario['name']}*\n\n🎯 Gols marcados recentes: {gols_time}\n🚩 Escanteios: {escanteios_time}\n📊 Posse de bola: {posse_time}\n\n🔁 Entrada provável: *Dupla hipótese 1X*\n🎯 Over 1.5 gols sugerido\n\n🧠 Base: estatísticas reais API-Football." 
 
-async def chat_simulacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    texto = update.message.text.strip()
-    if 'x' in texto.lower():
-        fixtures = get_fixtures_today()
-        jogo_encontrado = None
-        for f in fixtures:
-            home = f['teams']['home']['name'].lower()
-            away = f['teams']['away']['name'].lower()
-            if home in texto.lower() and away in texto.lower():
-                jogo_encontrado = f
-                break
-        if not jogo_encontrado:
-            await update.message.reply_text("❌ Jogo não encontrado para hoje. Tente outro jogo ou verifique o nome.")
-            return
+def jogos_com_escanteios_altos(): url = f"{API_FOOTBALL_URL}/fixtures?date={BR_DATE}" r = requests.get(url, headers=HEADERS).json() jogos = r["response"][:5] resultado = "📊 Jogos com tendência de escanteios altos:\n\n" for jogo in jogos: home = jogo["teams"]["home"]["name"] away = jogo["teams"]["away"]["name"] partida_id = jogo["fixture"]["id"] estat_url = f"{API_FOOTBALL_URL}/fixtures/statistics?fixture={partida_id}" stats = requests.get(estat_url, headers=HEADERS).json() total = 0 for s in stats["response"]: for stat in s["statistics"]: if stat["type"] == "Corner Kicks" and stat["value"]: total += int(stat["value"]) if total >= 9: resultado += f"🚩 {home} x {away} — Total escanteios: {total}\n" return resultado if resultado.strip() != "📊 Jogos com tendência de escanteios altos:" else "❌ Nenhum jogo com muitos escanteios encontrado hoje."
 
-        fixture_id = jogo_encontrado['fixture']['id']
-        stats = get_fixture_stats(fixture_id)
-        p1, px, p2 = calculate_probabilities(stats)
-        dupla_1X, dupla_12, dupla_X2 = calcular_dupla_hipotese(p1, px, p2)
+========== INICIAR ============ 
 
-        resposta = (
-            f"🎲 *Simulação do jogo:* {jogo_encontrado['teams']['home']['name']} x {jogo_encontrado['teams']['away']['name']}\n\n"
-            f"🏠 Vitória time da casa: {p1*100:.1f}%\n"
-            f"🤝 Empate: {px*100:.1f}%\n"
-            f"🚩 Vitória time visitante: {p2*100:.1f}%\n\n"
-            f"🔢 *Dupla hipótese:*\n"
-            f"1X (Casa ou empate): {dupla_1X*100:.1f}%\n"
-            f"12 (Casa ou visitante): {dupla_12*100:.1f}%\n"
-            f"X2 (Empate ou visitante): {dupla_X2*100:.1f}%"
-        )
-        await update.message.reply_text(resposta, parse_mode="Markdown")
-    else:
-        await update.message.reply_text(
-            "❓ Para simular, envie o jogo no formato: 'Time A x Time B'\n"
-            "Exemplo: Palmeiras x Corinthians"
-        )
+bot.polling(none_stop=True)
 
-def main():
-    Thread(target=run_flask).start()
-    app_bot = ApplicationBuilder().token(BOT_TOKEN).build()
-    app_bot.add_handler(CommandHandler("start", start))
-    app_bot.add_handler(CallbackQueryHandler(handle_menu))
-    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_simulacao))
-    print("🤖 Bot ProGolAI rodando...")
-    app_bot.run_polling()
-
-if __name__ == "__main__":
-    main()

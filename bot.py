@@ -7,11 +7,9 @@ from telegram.ext import (
 from flask import Flask
 from threading import Thread
 
-# Tokens
 BOT_TOKEN = "8219603341:AAHsqUktaC5IIEtI8aehyPZtDrrKHWpeZOQ"
 API_KEY = "cadc8d2e9944e5f78dc45bf26ab7a3fa"
 
-# Flask para keepalive
 app = Flask(__name__)
 
 @app.route('/ping')
@@ -21,15 +19,12 @@ def ping():
 def run_flask():
     app.run(host="0.0.0.0", port=5000)
 
-# Cabeçalhos da API
 HEADERS = {
-    'x-apisports-key': API_KEY
+    "x-apisports-key": API_KEY
 }
 
-# Base URL da API AI Football
 BASE_URL = "https://api-football-v1.p.rapidapi.com/v3"
 
-# Função para obter jogos do dia
 def get_fixtures_today():
     from datetime import datetime
     date_today = datetime.utcnow().strftime('%Y-%m-%d')
@@ -40,7 +35,6 @@ def get_fixtures_today():
         return data.get("response", [])
     return []
 
-# Função para obter estatísticas de um jogo
 def get_fixture_stats(fixture_id):
     url = f"{BASE_URL}/fixtures/statistics?fixture={fixture_id}"
     response = requests.get(url, headers=HEADERS)
@@ -49,39 +43,28 @@ def get_fixture_stats(fixture_id):
         return data.get("response", [])
     return []
 
-# Função para calcular probabilidades simples (exemplo simplificado)
 def calculate_probabilities(stats):
-    # Se não tiver dados, retorna probabilidades padrão
     if not stats:
-        return 0.35, 0.30, 0.35  # casa, empate, visitante
-
-    # Exemplo de cálculo simples usando posse de bola e finalizações no gol
-    home_stats = next((team for team in stats if team['team']['id'] == stats[0]['team']['id']), None)
-    away_stats = next((team for team in stats if team['team']['id'] != stats[0]['team']['id']), None)
-
-    # Tenta extrair finalizações no gol (shots on goal)
-    home_shots = next((s['value'] for s in home_stats['statistics'] if s['type'] == 'Shots on Goal'), 0)
-    away_shots = next((s['value'] for s in away_stats['statistics'] if s['type'] == 'Shots on Goal'), 0)
-
-    # Probabilidades proporcionais às finalizações no gol
-    total_shots = home_shots + away_shots
-    if total_shots == 0:
         return 0.33, 0.34, 0.33
-
-    p1 = home_shots / total_shots
-    p2 = away_shots / total_shots
-    px = 1 - p1 - p2
-    if px < 0:
-        px = 0
-
-    # Normaliza
-    soma = p1 + px + p2
-    return p1 / soma, px / soma, p2 / soma
+    try:
+        home_stats = stats[0]
+        away_stats = stats[1]
+        home_shots = next((s['value'] for s in home_stats['statistics'] if s['type'] == 'Shots on Goal'), 0)
+        away_shots = next((s['value'] for s in away_stats['statistics'] if s['type'] == 'Shots on Goal'), 0)
+        total = home_shots + away_shots
+        if total == 0:
+            return 0.33, 0.34, 0.33
+        p1 = home_shots / total
+        p2 = away_shots / total
+        px = 1 - p1 - p2
+        if px < 0: px = 0
+        soma = p1 + px + p2
+        return p1 / soma, px / soma, p2 / soma
+    except Exception:
+        return 0.33, 0.34, 0.33
 
 def calcular_dupla_hipotese(p1, px, p2):
     return p1 + px, p1 + p2, px + p2
-
-# Funções Telegram Bot
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -101,6 +84,7 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
+    print(f"Callback recebido: {data}")
 
     if data == 'prog':
         fixtures = get_fixtures_today()
@@ -126,7 +110,7 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"Dupla hipótese:\n"
                     f"1X: {dupla_1X*100:.1f}%, 12: {dupla_12*100:.1f}%, X2: {dupla_X2*100:.1f}%\n\n")
             count += 1
-            if count >= 5:  # Limita a 5 jogos para mensagem
+            if count >= 5:
                 break
         await query.edit_message_text(msg, parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Voltar", callback_data='menu')]]))
@@ -147,7 +131,6 @@ async def chat_simulacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = update.message.text.strip()
     if 'x' in texto.lower():
         fixtures = get_fixtures_today()
-        # Procura jogo com nomes aproximados
         jogo_encontrado = None
         for f in fixtures:
             home = f['teams']['home']['name'].lower()
@@ -183,13 +166,10 @@ async def chat_simulacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     Thread(target=run_flask).start()
-
     app_bot = ApplicationBuilder().token(BOT_TOKEN).build()
-
     app_bot.add_handler(CommandHandler("start", start))
     app_bot.add_handler(CallbackQueryHandler(handle_menu))
     app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_simulacao))
-
     print("🤖 Bot ProGolAI rodando...")
     app_bot.run_polling()
 

@@ -7,7 +7,7 @@ from telegram.ext import (
 from flask import Flask
 from threading import Thread
 
-BOT_TOKEN = "8219603341:AAHsqUktaC5IIEtI8aehyPZtDrrKHWpeZOQ"
+BOT_TOKEN = "8219603341:AAFCudJRPO4IjKkSNWOfZ09oAU14tTNncSY"
 API_KEY = "cadc8d2e9944e5f78dc45bf26ab7a3fa"
 
 app = Flask(__name__)

@@ -192,11 +192,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Erro: {e}")
         await query.edit_message_text("❌ Ocorreu um erro interno.")
 
-def iniciar_bot():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.run_polling()
+import asyncio
 
 flask_app = Flask(__name__)
 
@@ -204,6 +200,15 @@ flask_app = Flask(__name__)
 def index():
     return "✅ ProGol AI Bot está rodando!"
 
+async def run_bot():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    await app.run_polling()
+
+def start_async_loop():
+    asyncio.run(run_bot())
+
 if __name__ == "__main__":
-    threading.Thread(target=iniciar_bot, daemon=True).start()
+    threading.Thread(target=start_async_loop, daemon=True).start()
     flask_app.run(host="0.0.0.0", port=PORT)
